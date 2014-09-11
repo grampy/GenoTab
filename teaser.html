@@ -1,0 +1,222 @@
+<!doctype html>
+<html>
+<head>
+    <title>Genealogy Report</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/jointjs/0.9.0/joint.min.css" type="text/css" />
+	<link rel="stylesheet" href="http://code.jquery.com/mobile/1.3.2/jquery.mobile-1.3.2.min.css" />
+	<style>
+	.containing-element .ui-slider-switch { width: 20em;} 
+	</style>
+
+    <script type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/jointjs/0.9.0/joint.min.js"></script>
+    <script type="text/javascript" src="lib/jquery.panzoom.min.js"></script>
+    <script type="text/javascript" src="lib/geno.js"></script>
+    <script type="text/javascript">
+$(document).ready(function() {
+	var node=null, name, bbox, w, h, v, ind, fam, default_lines;
+	// create jqm accordion tabs and Jointjs chart and paper for each GenoMap in the data
+	$("div#tabs").collapsibleset({disabled:true});
+	$.each($geno.json.Charts, function(i, chart){
+		 name = chart.$_Name;
+		 if ($geno.default_map == "") $geno.default_map = name;
+		 bbox = chart.$_BoundaryRect.split(',');
+		 w = parseInt(bbox[2]) - parseInt(bbox[0]);
+		 h = parseInt(bbox[1]) - parseInt(bbox[3]); // y axis is inverted in data
+		 $("div#tabs").append('<div data-role="collapsible"><h3>' + name + '</h3>' +
+		 '<div class="containing-element"><form>' +
+				'<label for="flip-' + name +'"></label><select name="flip-' + name + '" id="flip-' + name + '" data-role="slider" data-mini="true" ><option value="off">Pan/Zoom Off</option>	<option value="on">Pan/Zoom On</option></select> ' +
+				'</form></div>' +
+				'<p id="'+name+'" class="paper"></p></div>');
+		// toggle pan/zoom on/off facility when flip switch changed		
+		$('#flip-'+name).on('slidestop', function(event, ui) {
+			if ($('svg:first').panzoom('isDisabled')) {
+				$('svg').panzoom('enable');
+			} else {
+				$('svg').panzoom('disable');
+			}
+		});
+		// save GenoMap bounding box offsets to transform all other points.
+		 $geno.maps[name] = {
+			dx: parseInt(bbox[0]),
+			dy: parseInt(bbox[1])
+		 };
+		 $geno.maps[name].chart = new joint.dia.Graph;
+		 $geno.maps[name].canvas = new joint.dia.Paper({
+			el: $('p#'+name),
+			width: w,
+			height: h,
+			gridSize: 1,
+			perpendicularLinks: true,
+			model: $geno.maps[name].chart
+		});
+		 if ($('#'+name).outerWidth() > $('#tabs').width()) $('#tabs').width($('#'+name).outerWidth());
+	});
+	
+	default_lines =  $geno.json.Global.Display.$Lines;
+	// loop over Objects plotting individuals and families on their corresponding chart
+	$.each($geno.json.Objects, function(id, obj) {
+		var v, z, real = (obj.$_IndividualInternalHyperlink ? $geno.json.Objects['Ind_'+obj.$_IndividualInternalHyperlink] : obj),
+			source, target;
+		obj.id = id;
+		//console.log(id);
+		switch (id.substring(0,3)) {
+		case 'Ind' :
+			with (obj) {
+				obj.Map = $geno.maps[Position.$_Chart || $geno.default_map];
+				var points = $geno.Points(Position.$_BoundaryRect,Map.dx, Map.dy)
+					,position = $geno.Position($Position, Map.dx, Map.dy)
+					,size = $geno.sizes[Position.$_Size ? Position.$_Size : "M"]
+					,box= $geno.Size(points)
+					,scale = $geno.scale[size]
+					,display = joint.util.deepSupplement({}, $geno.json.Global.Display, {Flags:''}, (obj.Display ? Display : null)) //merge with default colours
+					,border = (display.Flags.$_Enable || '').indexOf('b')+1;
+				z = (obj.Position && Position.$_z ? Position.$_z : $geno.default_z['Ind']);
+				obj.Element = new $geno.$Js.chart.Individual(
+					{'position' : {x: points[0].x, y: points[0].y}
+					,'size' :box
+					,'map' : obj.Map
+					,z : z
+					,attrs :  {
+						'.box' :{	// optional border around gender symbol
+							 width: box.width
+							,height: box.height, 
+							stroke: (border ? display.Colors.Border.$_Outline : 'transparent')
+							,fill: (border ? display.Colors.Border.$Fill : 'transparent')
+							,'stroke-width': size}
+						,'.midpoint' : {
+								'ref-x':position.x - points[0].x
+								,'ref-y':position.y - points[0].y
+							}
+						,'.male' : 	{display : (real.$Gender && (real.$Gender == 'M') ? 'auto' : 'none')
+								,'ref-x':position.x - points[0].x - 8 * scale
+								,'ref-y':position.y -points[0].y - 8 * scale
+								,fill: display.Colors.Gender.$_Fill
+								,width: 16 * scale
+								,height: 16 * scale
+								,stroke: display.Colors.Gender.$_Symbol
+								,'stroke-width': size}
+						 ,'.female' :{display : (real.$Gender && (real.$Gender == 'F') ? 'auto' : 'none')
+								,'ref-x':position.x - points[0].x
+								,'ref-y':position.y -points[0].y
+								,fill: display.Colors.Gender.$_Fill
+								,stroke: display.Colors.Gender.$_Symbol
+								,'stroke-width': size}
+						 ,'.pet' : 	{display : (real.$Gender && (real.$Gender == 'P') ? 'auto' : 'none')
+								,'ref-x':position.x - points[0].x
+								,'ref-y':position.y -points[0].y
+								,fill: display.Colors.Gender.$_Fill
+								,stroke: display.Colors.Gender.$_Symbol
+								,'stroke-width': size}
+						 ,'.unknown' :{display : (!real.$Gender || (real.$Gender && real.$Gender == '') ? 'auto' : 'none')
+								,fill: display.Colors.Gender.$_Fill
+								,stroke: display.Colors.Gender.$_Symbol
+								,'stroke-width': size}
+						  ,'.name' : {
+								text :(obj.Name ? Name.$Display.split(' ').join('\n')  || '' : '')
+								,'ref-y': 12 * scale, 'ref' : '.midpoint'
+								}
+						}
+					}							
+				);
+				obj.Map.chart.addCell(obj.Element);
+			};
+			break;	
+		case 'Fam' :	// Family
+			obj.Element = new $geno.$Js.Family(obj);
+			break;
+		case 'Sha' :	// Shape
+		case 'Hou' :	// Household
+			with (obj) {
+				obj.Map = $geno.maps[obj.Position.$_Chart || $geno.default_map];
+				v = (obj.Position ? $geno.Points(obj.Position, obj.Map.dx, obj.Map.dy) : []);
+				if (v.length < 2) break;
+				z = (obj.Position.$_z ? Position.$_z : $geno.default_z[id.substring(0,3)]);
+				source = v.shift();
+				target = v.pop();
+				obj.Link = new $geno.$Jd.Link({
+					source: source, target: target,labels:[], vertices: v, z : z,'map' : obj.Map,
+					attrs : {'.connection': {
+						'stroke' : Display.Color.$_Line,
+						'stroke-width' : $geno.sizes[obj.Position.$_Size ? Position.$_Size : "M"],
+						'stroke-dasharray' : $geno.dasharray[Display.$_Pattern || ''],
+						'style' : 'fill: ' + Display.Color.$_Fill + ';'}
+					}
+				});
+				obj.Map.chart.addCell(obj.Link);
+				break;
+			}
+		}
+	});
+	// loop over Objects again this time selecting Pedigree Links
+	$.each($geno.json.Objects, function(id, obj) {
+		var v,z;
+		obj.id = id;
+		with (obj) {
+			switch (id.substring(0,3)) {
+			case 'Ped' :
+				ind = $geno.json.Objects['Ind_'+$_Individual];
+				fam = $geno.json.Objects['Fam_'+$_Family];
+				map = ind.Map;
+				v = (obj.Position ? $geno.Points(obj.Position, map.dx, map.dy) : []);
+				z = (obj.Position && Position.$_z ? Position.$_z : $geno.default_z['Ped']);
+				switch($_PedigreeLink) {
+				case 'Parent' : 
+					obj.Link = new $geno.$Jd.Link(
+						{source: {id:ind.Element.id ,selector : '.midpoint'},
+						target: {id:fam.Element.top.id},
+						attrs :  {'.connection': {
+							'stroke'			: $geno.pedigree[$_PedigreeLink][0],
+							'stroke-dasharray'	: $geno.pedigree[$_PedigreeLink][1],
+							'stroke-width' 		: $geno.sizes[obj.Position && obj.Position.$_Size ? Position.$_Size : "M"]}
+						},
+						labels:[],
+						vertices: v,
+						z : z,
+						'map' : map
+						}
+					);
+					break;
+				default :
+					obj.Link = new $geno.$Jd.Link(
+						{source: {id:fam.Element.bottom.id},
+						target: {id:ind.Element.id ,selector : '.midpoint'},
+						attrs :  {'.connection': {
+							'stroke'			: $geno.pedigree[$_PedigreeLink][0],
+							'stroke-dasharray'	: $geno.pedigree[$_PedigreeLink][1],
+							'stroke-width' 		: $geno.sizes[obj.Position && obj.Position.$_Size ? Position.$_Size : "M"]}
+						},
+						labels:[],
+						vertices: v,
+						z : z,
+						'map' : map}
+					);
+				}
+				/* obj.Link.label(0
+							 ,{position: .5,
+								attrs: {
+									rect: { fill: 'white' },
+									text: { fill: 'blue', text: z+'' }
+								}}); */
+				map.chart.addCell(obj.Link);
+			}
+			
+		}
+	});
+	$('.ui-slider-switch').slider('refresh');
+	$('svg').panzoom();
+	$('svg').panzoom('disable');
+	$("div#tabs").collapsibleset({disabled: false});
+});
+</script>
+	<script src="http://code.jquery.com/mobile/1.3.2/jquery.mobile-1.3.2.min.js"></script>
+<script type="text/javascript" src='FamilyTree.json'></script>
+</head>
+
+<body>
+<div id='tabs' data-role="collapsible-set"></div>
+</body>
+</html>
