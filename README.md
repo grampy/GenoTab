@@ -15,4 +15,4 @@ I hope to publish a demo shortly. Watch this space!
 
 #Contributions
 
-Any help with this project would be much appreciated.  My programming skills are wek, rooted way back in the 70s with COBOL and assembler. I struggle to get to grips with new fangled techniques, so development is a slow iterative process to discover what works and what doesn't.
+Any help with this project would be much appreciated.  My programming skills are weak, rooted way back in the 70s with COBOL and assembler. I struggle to get to grips with new fangled techniques, so development is a slow iterative process to discover what works and what doesn't.
